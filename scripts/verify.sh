@@ -9,6 +9,17 @@ vtysh() {
   docker exec "${lab_prefix}-${node}" vtysh "$@"
 }
 
+bgp_session_up() {
+  local node="$1"
+  local family="$2"
+  local peer="$3"
+
+  vtysh "$node" -c "show bgp ${family} unicast summary" 2>/dev/null |
+    awk -v peer="$peer" \
+      '$1 == peer && $3 == "205013" && $10 ~ /^[0-9]+$/ { found = 1 }
+       END { exit !found }'
+}
+
 echo "Waiting for IPv4 and IPv6 BGP routes..."
 for attempt in $(seq 1 60); do
   if vtysh edge1 -c "show bgp ipv4 unicast 11.11.0.0/16" 2>/dev/null |
@@ -53,6 +64,26 @@ for attempt in $(seq 1 60); do
   sleep 1
 done
 
+echo "Waiting for all redundant RR sessions..."
+for attempt in $(seq 1 60); do
+  all_up=true
+  for client in edge1 edge2 core1 core2; do
+    for rr in 21 22; do
+      bgp_session_up "$client" ipv4 "10.255.0.${rr}" || all_up=false
+      bgp_session_up "$client" ipv6 "fd00:6500::${rr}" || all_up=false
+    done
+  done
+
+  if "$all_up"; then
+    break
+  fi
+  if [[ "$attempt" -eq 60 ]]; then
+    echo "ERROR: Not all redundant RR sessions established within 60 seconds." >&2
+    exit 1
+  fi
+  sleep 1
+done
+
 echo
 echo "=== Edge IPv4 BGP summaries ==="
 vtysh edge1 -c "show bgp ipv4 unicast summary"
@@ -64,30 +95,21 @@ vtysh edge1 -c "show bgp ipv6 unicast summary"
 vtysh edge2 -c "show bgp ipv6 unicast summary"
 
 echo
-echo "=== Route Reflector client checks ==="
-for edge in edge1 edge2; do
-  if docker exec "${lab_prefix}-${edge}" ip link show eth4 >/dev/null 2>&1; then
-    echo "ERROR: ${edge} still has a direct Edge-to-Edge eth4 link." >&2
-    exit 1
-  fi
-done
-echo "edge1 and edge2 have no direct data-plane link"
-
-for edge in edge1 edge2; do
-  running_config="$(vtysh "$edge" -c "show running-config")"
+echo "=== Dedicated Route Reflector HA checks ==="
+for rr in rr1 rr2; do
+  running_config="$(vtysh "$rr" -c "show running-config")"
   grep -Fq "bgp cluster-id 10.255.255.1" <<<"$running_config"
-  [[ "$(grep -Fc "route-reflector-client" <<<"$running_config")" -eq 4 ]]
-  echo "${edge}: core1/core2 are IPv4 and IPv6 RR clients"
+  grep -Fq "neighbor RR-CLIENTS route-reflector-client" <<<"$running_config"
+  grep -Fq "neighbor RR-CLIENTS-V6 route-reflector-client" <<<"$running_config"
+  echo "${rr}: dedicated RR with common cluster ID and dual-stack clients"
 done
 
-for core in core1 core2; do
-  ipv4_summary="$(vtysh "$core" -c "show bgp ipv4 unicast summary")"
-  ipv6_summary="$(vtysh "$core" -c "show bgp ipv6 unicast summary")"
-  grep -Fq "10.255.0.1" <<<"$ipv4_summary"
-  grep -Fq "10.255.0.2" <<<"$ipv4_summary"
-  grep -Fq "fd00:6500::1" <<<"$ipv6_summary"
-  grep -Fq "fd00:6500::2" <<<"$ipv6_summary"
-  echo "${core}: both redundant RR sessions are present"
+for client in edge1 edge2 core1 core2; do
+  bgp_session_up "$client" ipv4 "10.255.0.21"
+  bgp_session_up "$client" ipv4 "10.255.0.22"
+  bgp_session_up "$client" ipv6 "fd00:6500::21"
+  bgp_session_up "$client" ipv6 "fd00:6500::22"
+  echo "${client}: both RR sessions are present"
 done
 
 echo
@@ -165,4 +187,4 @@ docker exec "${lab_prefix}-transit-b" \
   ping -6 -I 2001:db8:6520::1 -c 3 -W 1 2001:db8:6500:100::10
 
 echo
-echo "PASS: Internet Edge control plane and dual-stack forwarding are healthy."
+echo "PASS: Dedicated RR HA control plane and dual-stack forwarding are healthy."

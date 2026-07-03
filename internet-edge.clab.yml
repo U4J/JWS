@@ -11,6 +11,7 @@ topology:
       binds:
         - configs/__clabNodeName__/frr.conf:/etc/frr/frr.conf:ro
         - configs/daemons:/etc/frr/daemons:ro
+        - configs/vtysh.conf:/etc/frr/vtysh.conf:ro
       exec:
         # Keep Docker management connected routes, but force lab traffic onto
         # the OSPF/BGP data plane.
@@ -21,6 +22,10 @@ topology:
     edge1:
       group: frr
     edge2:
+      group: frr
+    rr1:
+      group: frr
+    rr2:
       group: frr
     core1:
       group: frr
@@ -39,10 +44,14 @@ topology:
     - endpoints: ["edge1:eth2", "core2:eth1"]
     - endpoints: ["edge2:eth1", "core1:eth2"]
     - endpoints: ["edge2:eth2", "core2:eth2"]
-    # No direct edge1-edge2 circuit: RR loopback sessions traverse the cores.
     - endpoints: ["core1:eth3", "core2:eth3"]
     - endpoints: ["core1:eth4", "service:eth1"]
     - endpoints: ["core2:eth4", "service:eth2"]
+    # Route Reflectors are separate, dual-homed control-plane nodes.
+    - endpoints: ["rr1:eth1", "core1:eth5"]
+    - endpoints: ["rr1:eth2", "core2:eth5"]
+    - endpoints: ["rr2:eth1", "core1:eth6"]
+    - endpoints: ["rr2:eth2", "core2:eth6"]
 
     # External transit circuits
     - endpoints: ["edge1:eth3", "transit-a:eth1"]

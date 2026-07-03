@@ -1,7 +1,7 @@
-<<<<<<< HEAD
 # JWS
+
 Jess Web Services
-=======
+
 # ISP Lab — Internet Edge
 
 這是 ISP lab 的第一階段：以 Containerlab 與 FRRouting 建立可實際驗證的
@@ -12,22 +12,26 @@ dual-stack Internet Edge。
 ```text
              AS1111 Peer-1         Peer-2 AS2222
                      |              |
-                 edge1 RR        RR edge2       AS205013
+                   edge1          edge2          AS205013
                     |\              /|
                     | core1----core2 |
-                    |    \      /     |
-                    |      service    |
+                    |  |\      /|    |
+                    | rr1      rr2   |
+                    |    \    /      |
+                    |     service    |
 ```
 
 實際線路是：
 
 - `edge1` 只連 Peer-1（Transit-A）；`edge2` 只連 Peer-2（Transit-B）。
-- 兩台 Edge 之間沒有實體直連；RR 間的 loopback iBGP 經 Core 的 IGP 路徑建立。
+- Edge Router 與 Route Reflector 是不同機器；`edge1`、`edge2` 不再兼任 RR。
 - Edge 與 Core 間有四條 uplink；Core 彼此互連。
 - `service` 雙歸到兩台 Core，用來做真正的端到端測試。
-- AS205013 內跑 OSPFv2/OSPFv3。`edge1`、`edge2` 是共用 cluster ID
-  `10.255.255.1` 的冗餘 Route Reflectors，`core1`、`core2` 是兩者共同的
-  RR clients。
+- `rr1`、`rr2` 各自雙歸到兩台 Core，避免單一 Core 或單一 RR 成為控制平面
+  的單點故障。
+- AS205013 內跑 OSPFv2/OSPFv3。`rr1`、`rr2` 是共用 cluster ID
+  `10.255.255.1` 的獨立冗餘 Route Reflectors；`edge1`、`edge2`、`core1`
+  與 `core2` 都同時是兩台 RR 的 clients。
 - 每台 Edge 與各自的 Transit 建立 IPv4/IPv6 eBGP，並以 BFD 偵測故障。
 
 AS1111、AS2222、`11.11.0.0/16` 與 `22.22.0.0/16` 在此僅供隔離 lab
@@ -42,7 +46,8 @@ private 或文件專用值。
 - Inbound policy 明確拒絕 RFC1918、IPv6 ULA，以及含 RFC 6996 Private ASN
   的 AS_PATH。
 - 每個 eBGP address-family 設定 maximum-prefix。
-- `edge1` 使用 Peer-1；`edge2` 使用 Peer-2，並透過 RR 架構交換外部路由。
+- `edge1` 使用 Peer-1；`edge2` 使用 Peer-2，並透過獨立的雙 RR 架構交換
+  外部路由。
 - RR 與 clients 都使用 loopback 建立 iBGP，底層由雙核心 OSPF 提供可達性。
 - Edge 對外的 outbound prefix-list 只允許 AS205013 自有 aggregate，因此
   Peer-1 學不到 Peer-2 prefix，Peer-2 也學不到 Peer-1 prefix；AS205013
@@ -84,22 +89,27 @@ sudo containerlab deploy --topo internet-edge.clab.yml
 bash scripts/verify.sh
 ```
 
-也可以使用相同操作的快捷命令：`make deploy`、`make verify`。
+也可以使用相同操作的快捷命令：`make deploy`、`make verify`。若要實際中斷
+`rr1` 驗證 HA，再執行 `make verify-ha`；腳本結束時會自動重新啟動 `rr1`。
 
 驗證腳本會檢查：
 
 1. IPv4/IPv6 BGP 路由是否在 60 秒內收斂。
 2. Edge BGP summary 與 BFD peers。
-3. 兩台 Core 與兩台 RR 的 client sessions。
+3. Edge/Core 到兩台獨立 RR 的 IPv4/IPv6 client sessions。
 4. Peer-1/Peer-2 彼此的 IPv4/IPv6 prefix 沒有外洩，且不能經 AS205013
    互通。
 5. service 到兩個 Transit loopback 的雙向 IPv4/IPv6 forwarding。
 6. Transit 到 AS205013 service prefix 的回程 forwarding。
 
+`make verify-ha` 會暫停 `rr1`，確認 `rr2` 單獨運作時，兩台 Edge 仍保有
+彼此的 IPv4/IPv6 Transit 路由，且 service forwarding 不受影響。
+
 進入 FRR CLI：
 
 ```bash
 docker exec -it clab-internet-edge-edge1 vtysh
+docker exec -it clab-internet-edge-rr1 vtysh
 ```
 
 常用命令：
@@ -117,7 +127,13 @@ show ipv6 route
 
 ## 故障切換練習
 
-先觀察 `edge1` 對 Transit-A 的路由，再中斷該 circuit：
+先驗證 Route Reflector HA：
+
+```bash
+make verify-ha
+```
+
+也可以觀察 `edge1` 對 Transit-A 的路由，再中斷該 circuit：
 
 ```bash
 docker exec clab-internet-edge-edge1 \
@@ -154,7 +170,8 @@ sudo containerlab destroy --cleanup --topo internet-edge.clab.yml
 | Transit-B simulated Internet | `22.22.0.0/16`, `2001:db8:6520::/48` |
 | IPv4 IGP loopbacks | `10.255.0.0/24` |
 | IPv6 IGP loopbacks | `fd00:6500::/48` |
+| RR1 loopbacks | `10.255.0.21/32`, `fd00:6500::21/128` |
+| RR2 loopbacks | `10.255.0.22/32`, `fd00:6500::22/128` |
 
 Containerlab topology 與 bind mount 的寫法依官方文件；FRR image 固定在
 `quay.io/frrouting/frr:10.6.1`，避免 `latest` 漂移。
->>>>>>> c31a623 (Initial commit)
