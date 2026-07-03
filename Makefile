@@ -1,6 +1,7 @@
 TOPO := internet-edge.clab.yml
 
-.PHONY: deploy redeploy inspect verify verify-ha destroy
+.PHONY: deploy redeploy inspect verify verify-ha verify-t2-ha \
+	verify-originator-ha destroy
 
 deploy:
 	sudo containerlab deploy --topo $(TOPO)
@@ -16,6 +17,12 @@ verify:
 
 verify-ha:
 	bash scripts/verify-rr-ha.sh
+
+verify-t2-ha:
+	bash scripts/verify-t2-ha.sh
+
+verify-originator-ha:
+	bash scripts/verify-originator-ha.sh
 
 destroy:
 	sudo containerlab destroy --cleanup --topo $(TOPO)

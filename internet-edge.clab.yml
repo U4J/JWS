@@ -1,5 +1,9 @@
 name: internet-edge
 
+mgmt:
+  network: internet-edge-mgmt
+  ipv4-subnet: 172.31.255.0/24
+
 topology:
   groups:
     frr:
@@ -16,43 +20,75 @@ topology:
         # Keep Docker management connected routes, but force lab traffic onto
         # the OSPF/BGP data plane.
         - ip route del default dev eth0
-        - ip -6 route del default dev eth0
+    gobgp:
+      kind: linux
+      image: jauderho/gobgp:v4.5.0
 
   nodes:
-    edge1:
+    tpe10-bb-tra-t1-r1:
       group: frr
-    edge2:
+      mgmt-ipv4: 172.31.255.2
+    tpe10-bb-tra-t1-r2:
       group: frr
-    rr1:
+      mgmt-ipv4: 172.31.255.3
+    tpe10-bb-rr-ext-r1:
       group: frr
-    rr2:
+      mgmt-ipv4: 172.31.255.6
+    tpe10-bb-rr-ext-r2:
       group: frr
-    core1:
+      mgmt-ipv4: 172.31.255.7
+    tpe10-bb-rr-ctrl-r1:
+      group: gobgp
+      mgmt-ipv4: 172.31.255.11
+      binds:
+        - configs/tpe10-bb-rr-ctrl-r1/gobgp.toml:/config/gobgp.toml:ro
+    tpe10-bb-rr-ctrl-r2:
+      group: gobgp
+      mgmt-ipv4: 172.31.255.12
+      binds:
+        - configs/tpe10-bb-rr-ctrl-r2/gobgp.toml:/config/gobgp.toml:ro
+    tpe10-bb-org-t1-r1:
       group: frr
-    core2:
+      mgmt-ipv4: 172.31.255.13
+    tpe10-bb-org-t1-r2:
       group: frr
+      mgmt-ipv4: 172.31.255.14
+    tpe10-bb-core-t1-r1:
+      group: frr
+      mgmt-ipv4: 172.31.255.4
+    tpe10-bb-core-t1-r2:
+      group: frr
+      mgmt-ipv4: 172.31.255.5
     service:
       group: frr
+      mgmt-ipv4: 172.31.255.8
     transit-a:
       group: frr
+      mgmt-ipv4: 172.31.255.9
     transit-b:
       group: frr
+      mgmt-ipv4: 172.31.255.10
 
   links:
     # ISP backbone
-    - endpoints: ["edge1:eth1", "core1:eth1"]
-    - endpoints: ["edge1:eth2", "core2:eth1"]
-    - endpoints: ["edge2:eth1", "core1:eth2"]
-    - endpoints: ["edge2:eth2", "core2:eth2"]
-    - endpoints: ["core1:eth3", "core2:eth3"]
-    - endpoints: ["core1:eth4", "service:eth1"]
-    - endpoints: ["core2:eth4", "service:eth2"]
+    - endpoints: ["tpe10-bb-tra-t1-r1:eth1", "tpe10-bb-core-t1-r1:eth1"]
+    - endpoints: ["tpe10-bb-tra-t1-r1:eth2", "tpe10-bb-core-t1-r2:eth1"]
+    - endpoints: ["tpe10-bb-tra-t1-r2:eth1", "tpe10-bb-core-t1-r1:eth2"]
+    - endpoints: ["tpe10-bb-tra-t1-r2:eth2", "tpe10-bb-core-t1-r2:eth2"]
+    - endpoints: ["tpe10-bb-core-t1-r1:eth3", "tpe10-bb-core-t1-r2:eth3"]
+    - endpoints: ["tpe10-bb-core-t1-r1:eth4", "service:eth1"]
+    - endpoints: ["tpe10-bb-core-t1-r2:eth4", "service:eth2"]
     # Route Reflectors are separate, dual-homed control-plane nodes.
-    - endpoints: ["rr1:eth1", "core1:eth5"]
-    - endpoints: ["rr1:eth2", "core2:eth5"]
-    - endpoints: ["rr2:eth1", "core1:eth6"]
-    - endpoints: ["rr2:eth2", "core2:eth6"]
+    - endpoints: ["tpe10-bb-rr-ext-r1:eth1", "tpe10-bb-core-t1-r1:eth5"]
+    - endpoints: ["tpe10-bb-rr-ext-r1:eth2", "tpe10-bb-core-t1-r2:eth5"]
+    - endpoints: ["tpe10-bb-rr-ext-r2:eth1", "tpe10-bb-core-t1-r1:eth6"]
+    - endpoints: ["tpe10-bb-rr-ext-r2:eth2", "tpe10-bb-core-t1-r2:eth6"]
+    # Prefix Originators are dual-homed and never peer with external transit.
+    - endpoints: ["tpe10-bb-org-t1-r1:eth1", "tpe10-bb-core-t1-r1:eth7"]
+    - endpoints: ["tpe10-bb-org-t1-r1:eth2", "tpe10-bb-core-t1-r2:eth7"]
+    - endpoints: ["tpe10-bb-org-t1-r2:eth1", "tpe10-bb-core-t1-r1:eth8"]
+    - endpoints: ["tpe10-bb-org-t1-r2:eth2", "tpe10-bb-core-t1-r2:eth8"]
 
     # External transit circuits
-    - endpoints: ["edge1:eth3", "transit-a:eth1"]
-    - endpoints: ["edge2:eth3", "transit-b:eth1"]
+    - endpoints: ["tpe10-bb-tra-t1-r1:eth3", "transit-a:eth1"]
+    - endpoints: ["tpe10-bb-tra-t1-r2:eth3", "transit-b:eth1"]

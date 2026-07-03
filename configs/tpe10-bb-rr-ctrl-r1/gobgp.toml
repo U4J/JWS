@@ -1,0 +1,68 @@
+[global.config]
+  as = 205013
+  router-id = "10.255.0.31"
+
+[global.apply-policy.config]
+  import-policy-list = ["LATENCY-BASELINE"]
+  default-import-policy = "reject-route"
+
+[[neighbors]]
+  [neighbors.config]
+    neighbor-address = "172.31.255.6"
+    peer-as = 205013
+  [neighbors.add-paths.config]
+    receive = true
+  [[neighbors.afi-safis]]
+    [neighbors.afi-safis.config]
+      afi-safi-name = "ipv4-unicast"
+  [[neighbors.afi-safis]]
+    [neighbors.afi-safis.config]
+      afi-safi-name = "ipv6-unicast"
+[[neighbors]]
+  [neighbors.config]
+    neighbor-address = "172.31.255.7"
+    peer-as = 205013
+  [neighbors.add-paths.config]
+    receive = true
+  [[neighbors.afi-safis]]
+    [neighbors.afi-safis.config]
+      afi-safi-name = "ipv4-unicast"
+  [[neighbors.afi-safis]]
+    [neighbors.afi-safis.config]
+      afi-safi-name = "ipv6-unicast"
+[[neighbors]]
+  [neighbors.config]
+    neighbor-address = "172.31.255.4"
+    peer-as = 205013
+  [neighbors.route-reflector.config]
+    route-reflector-client = true
+    route-reflector-cluster-id = "10.255.255.2"
+  [[neighbors.afi-safis]]
+    [neighbors.afi-safis.config]
+      afi-safi-name = "ipv4-unicast"
+  [[neighbors.afi-safis]]
+    [neighbors.afi-safis.config]
+      afi-safi-name = "ipv6-unicast"
+
+[[neighbors]]
+  [neighbors.config]
+    neighbor-address = "172.31.255.5"
+    peer-as = 205013
+  [neighbors.route-reflector.config]
+    route-reflector-client = true
+    route-reflector-cluster-id = "10.255.255.2"
+  [[neighbors.afi-safis]]
+    [neighbors.afi-safis.config]
+      afi-safi-name = "ipv4-unicast"
+  [[neighbors.afi-safis]]
+    [neighbors.afi-safis.config]
+      afi-safi-name = "ipv6-unicast"
+
+[[policy-definitions]]
+  name = "LATENCY-BASELINE"
+  [[policy-definitions.statements]]
+    name = "prefer-policy-tier"
+    [policy-definitions.statements.actions]
+      route-disposition = "accept-route"
+    [policy-definitions.statements.actions.bgp-actions]
+      set-local-pref = 300
