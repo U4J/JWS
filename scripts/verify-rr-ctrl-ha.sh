@@ -2,13 +2,13 @@
 set -euo pipefail
 
 lab_prefix="clab-internet-edge"
-t2_1="${lab_prefix}-tpe10-bb-rr-ctrl-r1"
-t2_2="${lab_prefix}-tpe10-bb-rr-ctrl-r2"
+ctrl_1="${lab_prefix}-tpe10-bb-rr-ctrl-r1"
+ctrl_2="${lab_prefix}-tpe10-bb-rr-ctrl-r2"
 
-restore_t2() {
-  docker start "$t2_1" "$t2_2" >/dev/null 2>&1 || true
+restore_ctrl() {
+  docker start "$ctrl_1" "$ctrl_2" >/dev/null 2>&1 || true
 }
-trap restore_t2 EXIT
+trap restore_ctrl EXIT
 
 vtysh() {
   local node="$1"
@@ -43,13 +43,13 @@ check_forwarding() {
 }
 
 echo "Stopping tpe10-bb-rr-ctrl-r1 to verify tpe10-bb-rr-ctrl-r2 takeover..."
-docker stop -t 1 "$t2_1" >/dev/null
+docker stop -t 1 "$ctrl_1" >/dev/null
 wait_for_preference 300
 check_forwarding
 echo "tpe10-bb-rr-ctrl-r2 preserved the policy route and forwarding"
 
-echo "Stopping tpe10-bb-rr-ctrl-r2 to verify fail-open RR-T1 fallback..."
-docker stop -t 1 "$t2_2" >/dev/null
+echo "Stopping tpe10-bb-rr-ctrl-r2 to verify fail-open RR-EXT fallback..."
+docker stop -t 1 "$ctrl_2" >/dev/null
 wait_for_preference 200
 check_forwarding
-echo "PASS: Core fell back to RR-T1 and forwarding remained healthy."
+echo "PASS: Core fell back to RR-EXT and forwarding remained healthy."

@@ -4,10 +4,9 @@ Jess Web Services
 
 # ISP Lab — Internet Edge
 
-這是 ISP lab 的第一階段：以 Containerlab 與 FRRouting 建立可實際驗證的
-dual-stack Internet Edge。
+This is the first phase of the ISP lab: building a fully testable dual-stack Internet Edge using Containerlab and FRRouting.
 
-## 目標架構
+## Target Architecture
 
 ```text
  AS1111 Peer-1                       Peer-2 AS2222
@@ -24,79 +23,101 @@ dual-stack Internet Edge。
        |           service              |
 ```
 
-命名格式為
-`<location-code>-<network-segment>-<device-function>-<tier-number>-<router-number>`：
+The naming convention is:
 
-| 舊名稱 | 新名稱 |
-|---|---|
-| `edge1`, `edge2` | `tpe10-bb-tra-t1-r1`, `tpe10-bb-tra-t1-r2` |
-| `core1`, `core2` | `tpe10-bb-core-t1-r1`, `tpe10-bb-core-t1-r2` |
-| `rr1`, `rr2` | `tpe10-bb-rr-ext-r1`, `tpe10-bb-rr-ext-r2` |
-| `rr-t2-1`, `rr-t2-2` | `tpe10-bb-rr-ctrl-r1`, `tpe10-bb-rr-ctrl-r2` |
+`<location-code>-<network-segment>-<device-function>-<tier-or-role>-<router-number>`
 
-實際線路是：
+| Role                          | Nodes                                        |
+| ----------------------------- | -------------------------------------------- |
+| Transit Edge (`tra`)          | `tpe10-bb-tra-t1-r1`, `tpe10-bb-tra-t1-r2`   |
+| Backbone Core (`core`)        | `tpe10-bb-core-t1-r1`, `tpe10-bb-core-t1-r2` |
+| External-route RR (`rr-ext`)  | `tpe10-bb-rr-ext-r1`, `tpe10-bb-rr-ext-r2`   |
+| Policy-control RR (`rr-ctrl`) | `tpe10-bb-rr-ctrl-r1`, `tpe10-bb-rr-ctrl-r2` |
+| Prefix Originator (`org`)     | `tpe10-bb-org-t1-r1`, `tpe10-bb-org-t1-r2`   |
 
-- `tpe10-bb-tra-t1-r1` 只連 Peer-1（Transit-A）；
-  `tpe10-bb-tra-t1-r2` 只連 Peer-2（Transit-B）。
-- Edge Router 與 Route Reflector 是不同機器；兩台 `tra` 不兼任 RR。
-- Edge 與 Core 間有四條 uplink；Core 彼此互連。
-- `service` 雙歸到兩台 Core，用來做真正的端到端測試。
-- `tpe10-bb-org-t1-r1`、`tpe10-bb-org-t1-r2` 是雙歸、HA 的 Prefix
-  Originators，負責產生自有 aggregates；`bb-tra` 不再配置 aggregate
-  Null0 或 `network`。
-- `tpe10-bb-rr-ext-r1`、`tpe10-bb-rr-ext-r2` 是 RR-T1，各自雙歸到兩台
-  Core，並以 ADD-PATH 將所有 Edge 候選路徑送給 RR-T2。
-- `tpe10-bb-rr-ctrl-r1`、`tpe10-bb-rr-ctrl-r2` 是獨立的 GoBGP RR-T2
-  policy tier，透過專用 management control network 與 T1/Core 建立
-  iBGP，本身沒有 data-plane interface。
-- AS205013 內跑 OSPFv2/OSPFv3。T1 共用 cluster ID `10.255.255.1`；
-  T2 共用另一個 cluster ID `10.255.255.2`，避免階層式 reflection loop。
-- Edge 與 Core 同時保留兩條 T1 sessions；Core 另有兩條 T2 sessions。
-  T2 policy route 使用 `LOCAL_PREF 300`，T1 baseline 使用 `200`，所以兩台
-  T2 都失效時，Core 會自動 fail open 回 T1。
-- 每台 Edge 與各自的 Transit 建立 IPv4/IPv6 eBGP，並以 BFD 偵測故障。
+The physical and logical connectivity is as follows:
 
-AS1111、AS2222、`11.11.0.0/16` 與 `22.22.0.0/16` 在此僅供隔離 lab
-模擬；未取得相應授權時不得公告至真實 Internet。其餘 IPv4/IPv6 位址為
-private 或文件專用值。
+* `tpe10-bb-tra-t1-r1` connects only to Peer-1, or Transit-A, while
+  `tpe10-bb-tra-t1-r2` connects only to Peer-2, or Transit-B.
+* The Edge Routers and Route Reflectors are separate devices. The two `tra`
+  routers do not also act as RRs.
+* There are four uplinks between the Edge and Core layers, and the two Core
+  routers are interconnected.
+* The `service` node is dual-homed to both Core routers and is used for actual
+  end-to-end testing.
+* `tpe10-bb-org-t1-r1` and `tpe10-bb-org-t1-r2` are dual-homed, highly
+  available Prefix Originators responsible for originating the ISP-owned
+  aggregates. Aggregate Null0 routes and BGP `network` statements are no
+  longer configured on the `bb-tra` routers.
+* `tpe10-bb-rr-ext-r1` and `tpe10-bb-rr-ext-r2` are the RR-EXT nodes. Each is
+  dual-homed to both Core routers and uses ADD-PATH to advertise all candidate
+  Edge paths to the RR-CTRL layer.
+* `tpe10-bb-rr-ctrl-r1` and `tpe10-bb-rr-ctrl-r2` are independent GoBGP
+  RR-CTRL nodes. They establish iBGP sessions with RR-EXT and the Core routers
+  over a dedicated management control network and do not have data-plane
+  interfaces.
+* AS205013 runs OSPFv2 and OSPFv3 internally. The RR-EXT nodes share cluster ID
+  `10.255.255.1`, while the RR-CTRL nodes share a separate cluster ID,
+  `10.255.255.2`, to prevent hierarchical route-reflection loops.
+* Each Edge and Core router maintains sessions with both RR-EXT nodes. Each
+  Core router also maintains sessions with both RR-CTRL nodes. RR-CTRL policy
+  routes use `LOCAL_PREF 300`, while the RR-EXT baseline uses `LOCAL_PREF 200`.
+  Therefore, if both RR-CTRL nodes fail, the Core routers automatically fail
+  open to the RR-EXT routes.
+* Each Edge router establishes IPv4 and IPv6 eBGP sessions with its associated
+  Transit provider and uses BFD for failure detection.
 
-## 已實作的 Edge policy
+AS1111, AS2222, `11.11.0.0/16`, and `22.22.0.0/16` are used only for isolated
+lab simulation. They must not be advertised to the real Internet without the
+appropriate authorization. All remaining IPv4 and IPv6 addresses are either
+private or documentation-only values.
 
-- AS205013 只對外公告 `203.0.113.0/24` 與 `2001:db8:6500::/48`。
-- 兩台 Originator 以 Null0 建立 aggregates，並附加 Large Community
-  `205013:100:0`（function `100` 表示允許對 Transit export）。
-- `tpe10-bb-tra-t1-r1` 只有在 community match 時才向 Transit-A 公告，
-  額外 prepend AS205013 一次並設定 MED 50。
-- `tpe10-bb-tra-t1-r2` 額外 prepend AS205013 三次並設定 MED 150；內部
-  Large Community 在 eBGP export 時移除。
-- Prefix-list 阻止其他內部路由外洩。
-- Inbound prefix-list 只接受本 lab 的 default 與模擬 Internet prefixes。
-- Inbound policy 明確拒絕 RFC1918、IPv6 ULA，以及含 RFC 6996 Private ASN
-  的 AS_PATH。
-- 每個 eBGP address-family 設定 maximum-prefix。
-- `tpe10-bb-tra-t1-r1` 使用 Peer-1；`tpe10-bb-tra-t1-r2` 使用 Peer-2，並透過雙層、各自 HA 的 RR
-  架構交換外部路由。
-- T1 與 Edge/Core 使用 loopback iBGP；T1/T2/Core 的 policy sessions
-  使用固定的 `172.31.255.0/24` control network。
-- T1 對 T2 啟用 ADD-PATH，因此 GoBGP 可以同時看到來自兩台 `tra` 的候選
-  路徑；T2 保留 Edge loopback 作為 next hop，不承載客戶流量。
-- Edge 對外的 outbound prefix-list 只允許 AS205013 自有 aggregate，因此
-  Peer-1 學不到 Peer-2 prefix，Peer-2 也學不到 Peer-1 prefix；AS205013
-  不提供兩個外部 Peer 之間的 transit。
+## Implemented Edge Policies
 
-## Windows 前置環境
+* AS205013 advertises only `203.0.113.0/24` and `2001:db8:6500::/48` to
+  external peers.
+* Both Originators install the aggregates through Null0 routes and attach Large
+  Community `205013:100:0`, where function `100` means that export to Transit
+  providers is permitted.
+* `tpe10-bb-tra-t1-r1` advertises a prefix to Transit-A only when the community
+  matches. It additionally prepends AS205013 once and sets MED to 50.
+* `tpe10-bb-tra-t1-r2` prepends AS205013 three additional times and sets MED
+  to 150. Internal Large Communities are removed during eBGP export.
+* Prefix lists prevent other internal routes from leaking externally.
+* Inbound prefix lists accept only the lab default routes and simulated
+  Internet prefixes.
+* Inbound policies explicitly reject RFC1918 prefixes, IPv6 ULA prefixes, and
+  routes whose AS_PATH contains RFC 6996 private ASNs.
+* A maximum-prefix limit is configured for every eBGP address family.
+* `tpe10-bb-tra-t1-r1` uses Peer-1, while `tpe10-bb-tra-t1-r2` uses Peer-2.
+  External routes are exchanged internally through a two-layer, independently
+  highly available RR architecture.
+* RR-EXT uses loopback-based iBGP sessions with the Edge, Core, and Originator
+  routers. The policy sessions between RR-EXT, RR-CTRL, and the Core routers
+  use the dedicated `172.31.255.0/24` control network.
+* ADD-PATH is enabled from RR-EXT to RR-CTRL, allowing GoBGP to see candidate
+  paths from both `tra` routers simultaneously. RR-CTRL preserves the Edge
+  loopback as the BGP next hop and does not carry customer traffic.
+* The outbound prefix lists on the Edge routers permit only AS205013-owned
+  aggregates. Therefore, Peer-1 does not learn Peer-2 prefixes, and Peer-2
+  does not learn Peer-1 prefixes. AS205013 does not provide transit between
+  the two external peers.
 
-Containerlab 需要 Linux。Windows 官方做法是 WSL2；目前這台機器尚未安裝
-WSL distribution，Docker daemon 也沒有運作。
+## Windows Prerequisites
 
-在系統管理員 PowerShell 執行：
+Containerlab requires Linux. On Windows, the officially supported approach is
+WSL2. This machine currently does not have a WSL distribution installed, and
+the Docker daemon is not running.
+
+Run the following command in an elevated PowerShell session:
 
 ```powershell
 wsl --install
 ```
 
-重新開機後，可安裝 Containerlab 官方提供的 WSL-Containerlab distribution，
-或在 Ubuntu WSL 內安裝 Docker 與 Containerlab：
+After rebooting, either install the official WSL-Containerlab distribution
+provided by Containerlab, or install Docker and Containerlab inside an Ubuntu
+WSL distribution:
 
 ```bash
 sudo apt update
@@ -105,14 +126,14 @@ curl -sL https://containerlab.dev/setup | sudo -E bash -s "all"
 newgrp docker
 ```
 
-若使用 Docker Desktop，請依 Containerlab 官方 Windows 指南關閉該 WSL
-distribution 的 Docker Desktop integration；Containerlab 建議在 WSL VM
-內使用原生 Docker Engine。
+When using Docker Desktop, disable Docker Desktop integration for the WSL
+distribution according to the official Containerlab Windows guide.
+Containerlab recommends using a native Docker Engine inside the WSL VM.
 
-## 啟動與驗證
+## Deployment and Verification
 
-在 WSL shell 進入本目錄。Windows 的 `C:\Users\jessyu\Documents\JWS lab`
-通常會掛載為：
+Open a WSL shell and change to this directory. The Windows directory
+`C:\Users\jessyu\Documents\JWS lab` is typically mounted as:
 
 ```bash
 cd "/mnt/c/Users/jessyu/Documents/JWS lab"
@@ -120,41 +141,55 @@ sudo containerlab deploy --topo internet-edge.clab.yml
 bash scripts/verify.sh
 ```
 
-也可以使用相同操作的快捷命令：`make deploy`、`make verify`。若要實際中斷
-`tpe10-bb-rr-ext-r1` 驗證 T1 HA，執行 `make verify-ha`；若要驗證 T2 HA
-與全 T2 失效時的 T1 fallback，執行 `make verify-t2-ha`。測試腳本結束會
-自動重啟節點。`make verify-originator-ha` 會停止第一台 Originator，確認
-另一台持續產生 aggregate。
+The equivalent shortcut commands are `make deploy` and `make verify`.
 
-驗證腳本會檢查：
+To stop `tpe10-bb-rr-ext-r1` and validate RR-EXT high availability, run
+`make verify-ext-ha`.
 
-1. IPv4/IPv6 BGP 路由是否在 60 秒內收斂。
-2. Edge BGP summary 與 BFD peers。
-3. Edge/Core/Originator 到 T1，以及 T1/T2/Core policy tier 的所有
-   sessions。
-4. Aggregate 是否只由 Originator 產生並帶有 `205013:100:0`。
-5. Transit-A/B 是否分別收到預期的 AS_PATH、MED，且不含內部 community。
-6. T2 是否收到兩個 Edge 的 ADD-PATH candidates、套用 `LOCAL_PREF 300`，
-   且 Core 是否仍保有 `LOCAL_PREF 200` 的 T1 fallback。
-7. Peer-1/Peer-2 彼此的 IPv4/IPv6 prefix 沒有外洩，且不能經 AS205013
-   互通。
-8. service 到兩個 Transit loopback 的雙向 IPv4/IPv6 forwarding。
-9. Transit 到 AS205013 service prefix 的回程 forwarding。
+To validate RR-CTRL high availability and RR-EXT fallback when all RR-CTRL
+nodes have failed, run `make verify-ctrl-ha`.
 
-`make verify-ha` 會暫停 `tpe10-bb-rr-ext-r1`，確認
-`tpe10-bb-rr-ext-r2` 單獨運作時，兩台 Edge 仍保有彼此的 IPv4/IPv6
-Transit 路由，且 service forwarding 不受影響。
+The test scripts automatically restart the affected nodes when the tests
+finish.
 
-`make verify-t2-ha` 先暫停 `tpe10-bb-rr-ctrl-r1`，確認另一台 T2 保持
-policy route；再暫停 `tpe10-bb-rr-ctrl-r2`，確認 Core best path 從
-`LOCAL_PREF 300` 自動降回 T1 的 `LOCAL_PREF 200`，且 forwarding
-全程不中斷。
+`make verify-originator-ha` stops the first Originator and confirms that the
+second Originator continues to originate the aggregates.
 
-`make verify-originator-ha` 會暫停 `tpe10-bb-org-t1-r1`，確認兩台
-`bb-tra` 改用 `tpe10-bb-org-t1-r2`，並保持 community-driven export
-policy 與雙棧 forwarding。
+The verification script checks the following:
 
-進入 FRR CLI：
+1. Whether IPv4 and IPv6 BGP routes converge within 60 seconds.
+2. Edge BGP summaries and BFD peers.
+3. All sessions from the Edge, Core, and Originator routers to RR-EXT, as well
+   as all sessions in the RR-EXT, RR-CTRL, and Core policy plane.
+4. Whether the aggregates are originated only by the Originators and carry
+   Large Community `205013:100:0`.
+5. Whether Transit-A and Transit-B receive the expected AS_PATH and MED values,
+   without internal communities.
+6. Whether RR-CTRL receives ADD-PATH candidates from both Edge routers and
+   applies `LOCAL_PREF 300`, while the Core routers retain the RR-EXT fallback
+   paths with `LOCAL_PREF 200`.
+7. Whether the IPv4 and IPv6 prefixes belonging to Peer-1 and Peer-2 remain
+   isolated and cannot reach each other through AS205013.
+8. Bidirectional IPv4 and IPv6 forwarding between the `service` node and both
+   Transit loopbacks.
+9. Return-path forwarding from the Transit networks to the AS205013 service
+   prefix.
+
+`make verify-ext-ha` pauses `tpe10-bb-rr-ext-r1` and confirms that, while
+`tpe10-bb-rr-ext-r2` operates alone, both Edge routers retain each other's
+IPv4 and IPv6 Transit routes and service forwarding remains unaffected.
+
+`make verify-ctrl-ha` first pauses `tpe10-bb-rr-ctrl-r1` and confirms that the
+remaining RR-CTRL continues to provide the policy route. It then pauses
+`tpe10-bb-rr-ctrl-r2` and verifies that the Core best path automatically falls
+back from the RR-CTRL route with `LOCAL_PREF 300` to the RR-EXT route with
+`LOCAL_PREF 200`, without interrupting forwarding.
+
+`make verify-originator-ha` pauses `tpe10-bb-org-t1-r1` and confirms that both
+`bb-tra` routers switch to `tpe10-bb-org-t1-r2` while preserving the
+community-driven export policy and dual-stack forwarding.
+
+Enter the FRR CLI:
 
 ```bash
 docker exec -it clab-internet-edge-tpe10-bb-tra-t1-r1 vtysh
@@ -165,7 +200,7 @@ docker exec -it clab-internet-edge-tpe10-bb-rr-ctrl-r1 \
   gobgp global rib -a ipv4
 ```
 
-常用命令：
+Common commands:
 
 ```text
 show ip ospf neighbor
@@ -178,17 +213,18 @@ show ip route
 show ipv6 route
 ```
 
-## 故障切換練習
+## Failover Exercises
 
-先驗證 Route Reflector HA：
+First, validate Route Reflector high availability:
 
 ```bash
-make verify-ha
-make verify-t2-ha
+make verify-ext-ha
+make verify-ctrl-ha
 make verify-originator-ha
 ```
 
-也可以觀察 `tpe10-bb-tra-t1-r1` 對 Transit-A 的路由，再中斷該 circuit：
+You can also inspect the route from `tpe10-bb-tra-t1-r1` toward Transit-A and
+then interrupt the circuit:
 
 ```bash
 docker exec clab-internet-edge-tpe10-bb-tra-t1-r1 \
@@ -201,44 +237,50 @@ bash scripts/verify.sh
 docker exec clab-internet-edge-tpe10-bb-tra-t1-r1 ip link set eth3 up
 ```
 
-失效後，Transit-A 專屬的 `11.11.0.0/16` 會中斷；Transit-B 與內部 iBGP
-應維持正常。此一對一接法刻意不提供單一 Transit circuit 的備援。
+After the failure, the Transit-A-specific `11.11.0.0/16` prefix becomes
+unreachable. Transit-B and internal iBGP should remain operational. This
+one-to-one connectivity model intentionally does not provide redundancy for
+an individual Transit circuit.
 
-清除 lab：
+Destroy the lab:
 
 ```bash
 sudo containerlab destroy --cleanup --topo internet-edge.clab.yml
 ```
 
-快捷命令為 `make destroy`。
+The shortcut command is `make destroy`.
 
-## 位址與 AS 摘要
+## Addressing and AS Summary
 
-| 用途 | 值 |
-|---|---|
-| ISP | AS205013 |
-| Transit-A | AS1111 |
-| Transit-B | AS2222 |
-| ISP IPv4 aggregate | `203.0.113.0/24` |
-| ISP IPv6 aggregate | `2001:db8:6500::/48` |
-| Transit-A simulated Internet | `11.11.0.0/16`, `2001:db8:6510::/48` |
-| Transit-B simulated Internet | `22.22.0.0/16`, `2001:db8:6520::/48` |
-| IPv4 IGP loopbacks | `10.255.0.0/24` |
-| IPv6 IGP loopbacks | `fd00:6500::/48` |
-| `tpe10-bb-rr-ext-r1` loopbacks | `10.255.0.21/32`, `fd00:6500::21/128` |
-| `tpe10-bb-rr-ext-r2` loopbacks | `10.255.0.22/32`, `fd00:6500::22/128` |
-| `tpe10-bb-org-t1-r1` loopbacks | `10.255.0.41/32`, `fd00:6500::41/128` |
-| `tpe10-bb-org-t1-r2` loopbacks | `10.255.0.42/32`, `fd00:6500::42/128` |
-| Owned-prefix Large Community | `205013:100:0` |
-| T1 cluster ID | `10.255.255.1` |
-| T2 cluster ID | `10.255.255.2` |
-| T1/T2 control network | `172.31.255.0/24` |
-| `tpe10-bb-rr-ctrl-r1` router ID / control IP | `10.255.0.31`, `172.31.255.11` |
-| `tpe10-bb-rr-ctrl-r2` router ID / control IP | `10.255.0.32`, `172.31.255.12` |
+| Purpose                                      | Value                                 |
+| -------------------------------------------- | ------------------------------------- |
+| ISP                                          | AS205013                              |
+| Transit-A                                    | AS1111                                |
+| Transit-B                                    | AS2222                                |
+| ISP IPv4 aggregate                           | `203.0.113.0/24`                      |
+| ISP IPv6 aggregate                           | `2001:db8:6500::/48`                  |
+| Transit-A simulated Internet                 | `11.11.0.0/16`, `2001:db8:6510::/48`  |
+| Transit-B simulated Internet                 | `22.22.0.0/16`, `2001:db8:6520::/48`  |
+| IPv4 IGP loopbacks                           | `10.255.0.0/24`                       |
+| IPv6 IGP loopbacks                           | `fd00:6500::/48`                      |
+| `tpe10-bb-rr-ext-r1` loopbacks               | `10.255.0.21/32`, `fd00:6500::21/128` |
+| `tpe10-bb-rr-ext-r2` loopbacks               | `10.255.0.22/32`, `fd00:6500::22/128` |
+| `tpe10-bb-org-t1-r1` loopbacks               | `10.255.0.41/32`, `fd00:6500::41/128` |
+| `tpe10-bb-org-t1-r2` loopbacks               | `10.255.0.42/32`, `fd00:6500::42/128` |
+| Owned-prefix Large Community                 | `205013:100:0`                        |
+| RR-EXT cluster ID                            | `10.255.255.1`                        |
+| RR-CTRL cluster ID                           | `10.255.255.2`                        |
+| RR-EXT/RR-CTRL control network               | `172.31.255.0/24`                     |
+| `tpe10-bb-rr-ctrl-r1` router ID / control IP | `10.255.0.31`, `172.31.255.11`        |
+| `tpe10-bb-rr-ctrl-r2` router ID / control IP | `10.255.0.32`, `172.31.255.12`        |
 
-Containerlab topology 與 bind mount 的寫法依官方文件；FRR image 固定在
-`quay.io/frrouting/frr:10.6.1`，GoBGP image 固定在
-`jauderho/gobgp:v4.5.0`，避免 `latest` 漂移。目前 `LATENCY-BASELINE`
-policy 是供 latency controller 動態更新前的安全基線：T2 統一設為
-`LOCAL_PREF 300`，實際量測與 hysteresis 邏輯可再透過 GoBGP gRPC API
-加入。
+The Containerlab topology and bind-mount syntax follow the official
+documentation. The FRR image is pinned to
+`quay.io/frrouting/frr:10.6.1`, and the GoBGP image is pinned to
+`jauderho/gobgp:v4.5.0`, preventing unexpected changes caused by a moving
+`latest` tag.
+
+The current `LATENCY-BASELINE` policy serves as a safe baseline before dynamic
+updates from the latency controller are introduced. RR-CTRL uniformly assigns
+`LOCAL_PREF 300`. Actual latency measurements and hysteresis logic can be
+added later through the GoBGP gRPC API.

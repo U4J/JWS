@@ -142,14 +142,14 @@ vtysh tpe10-bb-tra-t1-r1 -c "show bgp ipv6 unicast summary"
 vtysh tpe10-bb-tra-t1-r2 -c "show bgp ipv6 unicast summary"
 
 echo
-echo "=== RR-T1 checks ==="
+echo "=== RR-EXT checks ==="
 for rr in tpe10-bb-rr-ext-r1 tpe10-bb-rr-ext-r2; do
   running_config="$(vtysh "$rr" -c "show running-config")"
   grep -Fq "bgp cluster-id 10.255.255.1" <<<"$running_config"
   grep -Fq "neighbor RR-CLIENTS route-reflector-client" <<<"$running_config"
   grep -Fq "neighbor RR-CLIENTS-V6 route-reflector-client" <<<"$running_config"
   grep -Fq "addpath-tx-all-paths" <<<"$running_config"
-  echo "${rr}: T1 clients and ADD-PATH feeds are configured"
+  echo "${rr}: RR-EXT clients and ADD-PATH feeds are configured"
 done
 
 for client in \
@@ -160,7 +160,7 @@ for client in \
   bgp_session_up "$client" ipv4 "10.255.0.22"
   bgp_session_up "$client" ipv6 "fd00:6500::21"
   bgp_session_up "$client" ipv6 "fd00:6500::22"
-  echo "${client}: both RR-T1 sessions are present"
+  echo "${client}: both RR-EXT sessions are present"
 done
 
 echo
@@ -191,7 +191,7 @@ for tra in tpe10-bb-tra-t1-r1 tpe10-bb-tra-t1-r2; do
 done
 
 echo
-echo "=== GoBGP RR-T2 policy checks ==="
+echo "=== GoBGP RR-CTRL policy checks ==="
 for t2 in tpe10-bb-rr-ctrl-r1 tpe10-bb-rr-ctrl-r2; do
   for peer in 4 5 6 7; do
     gobgp_neighbor_up "$t2" "172.31.255.${peer}"
@@ -224,7 +224,7 @@ for core in tpe10-bb-core-t1-r1 tpe10-bb-core-t1-r2; do
   grep -Fq "localpref 200" <<<"$ipv4_route"
   grep -Eq "localpref 300,.*best" <<<"$ipv6_route"
   grep -Fq "localpref 200" <<<"$ipv6_route"
-  echo "${core}: T2 policy path is best and T1 fallback remains installed"
+  echo "${core}: RR-CTRL policy path is best and RR-EXT fallback remains installed"
 done
 
 echo
@@ -325,4 +325,4 @@ docker exec "${lab_prefix}-transit-b" \
   ping -6 -I 2001:db8:6520::1 -c 3 -W 1 2001:db8:6500:100::10
 
 echo
-echo "PASS: Originator, RR-T1/T2 policies, and dual-stack forwarding are healthy."
+echo "PASS: Originator, RR-EXT/RR-CTRL policies, and dual-stack forwarding are healthy."
