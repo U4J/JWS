@@ -1,12 +1,36 @@
-# JWS
+# JWS Provider Labs
 
-Jess Web Services
+Jess Web Services 的 ISP 網路實驗環境。每個 lab 都保有自己的拓撲、設定與驗證腳本，
+讓 Internet Edge 與 MPLS VPN 可以獨立回歸，並在後續階段整合。
 
-# ISP Lab — Internet Edge
+## Labs
+
+| Lab            | 內容                                           |
+| -------------- | ---------------------------------------------- |
+| `internet-edge` | 雙棧 Transit、雙層 RR、Prefix Originator 與 HA |
+| `mpls-l3vpn`    | OSPF/LDP transport、VPNv4、VRF、RD/RT 與雙客戶 |
+
+```text
+labs/
+├── internet-edge/
+│   ├── topology.clab.yml
+│   ├── configs/
+│   └── scripts/
+└── mpls-l3vpn/
+    ├── topology.clab.yml
+    ├── configs/
+    └── scripts/
+```
+
+`make deploy`、`make verify` 和 `make destroy` 預設操作
+`internet-edge`。也可以使用 `LAB=mpls-l3vpn` 選擇另一個 lab，
+或使用 `make vpn-deploy` 等快捷命令。
+
+## Internet Edge Lab
 
 This is the first phase of the ISP lab: building a fully testable dual-stack Internet Edge using Containerlab and FRRouting.
 
-## Target Architecture
+### Target Architecture
 
 ```text
  AS1111 Peer-1                       Peer-2 AS2222
@@ -72,7 +96,7 @@ lab simulation. They must not be advertised to the real Internet without the
 appropriate authorization. All remaining IPv4 and IPv6 addresses are either
 private or documentation-only values.
 
-## Implemented Edge Policies
+### Implemented Edge Policies
 
 * AS205013 advertises only `203.0.113.0/24` and `2001:db8:6500::/48` to
   external peers.
@@ -103,6 +127,34 @@ private or documentation-only values.
   does not learn Peer-1 prefixes. AS205013 does not provide transit between
   the two external peers.
 
+## MPLS L3VPN Lab
+
+This lab keeps customer state on Provider Edge routers and leaves the Provider
+router free of customer VRFs:
+
+```text
+ce-blue-a  ─┐                              ┌─ ce-blue-b
+             ├─ PE-1 ══ LDP/MPLS ══ P ══ PE-2
+ce-green-a ─┘                              └─ ce-green-b
+```
+
+The lab implements:
+
+* OSPF as the provider underlay and LDP as the MPLS label distribution
+  protocol.
+* An iBGP VPNv4 session between both PE loopbacks.
+* `BLUE` and `GREEN` VRFs with unique per-site RDs.
+* Route-target `205013:100` for BLUE and `205013:200` for GREEN.
+* Automatically allocated VPN labels.
+* Deliberately overlapping customer prefixes in both VRFs, proving that
+  isolation comes from VRF/RD/RT semantics rather than different addresses.
+* Separate FRR daemon profiles for PE, P, and CE nodes. LDP is therefore not
+  enabled on customer nodes or any node in the Internet Edge lab.
+
+The focused lab intentionally has one P router and no transport redundancy.
+Redundant P links and integration with the Internet Edge are later phases,
+after the basic VPN control and data planes are stable.
+
 ## Windows Prerequisites
 
 Containerlab requires Linux. On Windows, the officially supported approach is
@@ -132,13 +184,15 @@ Containerlab recommends using a native Docker Engine inside the WSL VM.
 
 ## Deployment and Verification
 
+### Internet Edge
+
 Open a WSL shell and change to this directory. The Windows directory
 `C:\Users\jessyu\Documents\JWS lab` is typically mounted as:
 
 ```bash
 cd "/mnt/c/Users/jessyu/Documents/JWS lab"
-sudo containerlab deploy --topo internet-edge.clab.yml
-bash scripts/verify.sh
+sudo containerlab deploy --topo labs/internet-edge/topology.clab.yml
+bash labs/internet-edge/scripts/verify.sh
 ```
 
 The equivalent shortcut commands are `make deploy` and `make verify`.
@@ -213,6 +267,54 @@ show ip route
 show ipv6 route
 ```
 
+### MPLS L3VPN
+
+The Docker/WSL kernel must provide MPLS routing, GSO, MPLS IP tunnel, and
+Linux VRF functionality. `make vpn-deploy` runs a preflight check before
+Containerlab changes the system.
+
+When the features are built as modules, load them before deploying:
+
+```bash
+sudo modprobe mpls_router
+sudo modprobe mpls_gso
+sudo modprobe mpls_iptunnel
+sudo modprobe vrf
+```
+
+Some WSL2 kernels are built with `CONFIG_MPLS_ROUTING` disabled. Loading
+modules cannot repair that kernel configuration; use an MPLS-capable custom
+WSL kernel or a Linux VM/host in that case.
+
+Deploy and verify the VPN lab:
+
+```bash
+make vpn-deploy
+make vpn-verify
+make vpn-destroy
+```
+
+The equivalent generic commands are:
+
+```bash
+make LAB=mpls-l3vpn deploy
+make LAB=mpls-l3vpn verify
+make LAB=mpls-l3vpn destroy
+```
+
+Useful inspection commands:
+
+```bash
+docker exec clab-mpls-l3vpn-tpe10-svc-p-t1-r1 \
+  vtysh -c "show mpls ldp neighbor"
+docker exec clab-mpls-l3vpn-tpe10-svc-pe-t1-r1 \
+  vtysh -c "show mpls table"
+docker exec clab-mpls-l3vpn-tpe10-svc-pe-t1-r1 \
+  vtysh -c "show bgp ipv4 vpn"
+docker exec clab-mpls-l3vpn-tpe10-svc-pe-t1-r1 \
+  vtysh -c "show ip route vrf BLUE"
+```
+
 ## Failover Exercises
 
 First, validate Route Reflector high availability:
@@ -233,7 +335,7 @@ docker exec clab-internet-edge-tpe10-bb-tra-t1-r1 ip link set eth3 down
 sleep 3
 docker exec clab-internet-edge-tpe10-bb-tra-t1-r1 \
   vtysh -c "show bgp ipv4 unicast 11.11.0.0/16"
-bash scripts/verify.sh
+bash labs/internet-edge/scripts/verify.sh
 docker exec clab-internet-edge-tpe10-bb-tra-t1-r1 ip link set eth3 up
 ```
 
@@ -245,12 +347,13 @@ an individual Transit circuit.
 Destroy the lab:
 
 ```bash
-sudo containerlab destroy --cleanup --topo internet-edge.clab.yml
+sudo containerlab destroy --cleanup \
+  --topo labs/internet-edge/topology.clab.yml
 ```
 
 The shortcut command is `make destroy`.
 
-## Addressing and AS Summary
+## Internet Edge Addressing and AS Summary
 
 | Purpose                                      | Value                                 |
 | -------------------------------------------- | ------------------------------------- |
@@ -274,7 +377,7 @@ The shortcut command is `make destroy`.
 | `tpe10-bb-rr-ctrl-r1` router ID / control IP | `10.255.0.31`, `172.31.255.11`        |
 | `tpe10-bb-rr-ctrl-r2` router ID / control IP | `10.255.0.32`, `172.31.255.12`        |
 
-The Containerlab topology and bind-mount syntax follow the official
+The Containerlab topology files and bind-mount syntax follow the official
 documentation. The FRR image is pinned to
 `quay.io/frrouting/frr:10.6.1`, and the GoBGP image is pinned to
 `jauderho/gobgp:v4.5.0`, preventing unexpected changes caused by a moving

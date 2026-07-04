@@ -1,16 +1,16 @@
 zebra=yes
-bgpd=yes
+bgpd=no
 ospfd=yes
-ospf6d=yes
+ospf6d=no
 staticd=yes
-bfdd=yes
+bfdd=no
 
 ripd=no
 ripngd=no
 isisd=no
 pimd=no
 pim6d=no
-ldpd=no
+ldpd=yes
 nhrpd=no
 eigrpd=no
 babeld=no
@@ -22,9 +22,6 @@ pathd=no
 
 vtysh_enable=yes
 zebra_options=" -A 127.0.0.1 -s 90000000"
-bgpd_options=" -A 127.0.0.1"
 ospfd_options=" -A 127.0.0.1"
-ospf6d_options=" -A ::1"
 staticd_options=" -A 127.0.0.1"
-bfdd_options=" -A 127.0.0.1"
-
+ldpd_options=" -A 127.0.0.1"

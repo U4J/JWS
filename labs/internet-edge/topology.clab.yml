@@ -14,7 +14,7 @@ topology:
         net.ipv6.conf.all.forwarding: 1
       binds:
         - configs/__clabNodeName__/frr.conf:/etc/frr/frr.conf:ro
-        - configs/daemons:/etc/frr/daemons:ro
+        - configs/daemons-base:/etc/frr/daemons:ro
         - configs/vtysh.conf:/etc/frr/vtysh.conf:ro
       exec:
         # Keep Docker management connected routes, but force lab traffic onto
